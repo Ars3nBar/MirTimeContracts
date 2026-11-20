@@ -43,7 +43,7 @@ public class MirTimeContracts extends JavaPlugin implements CommandExecutor, Lis
         mtItemKey = new NamespacedKey("mirtimeitems", "mt_item_id");
         if (getCommand("contracts") != null) getCommand("contracts").setExecutor(this);
         Bukkit.getPluginManager().registerEvents(this, this);
-        getLogger().info("MirTimeContracts v2.1.0 (CS2 10-слотовые контракты без аннигилятора) запущен!");
+        getLogger().info("MirTimeContracts v2.2.0 (Шансы на каждый предмет + ванильные и кастомные призы) запущен!");
     }
 
     @Override
@@ -65,11 +65,11 @@ public class MirTimeContracts extends JavaPlugin implements CommandExecutor, Lis
         for (int s : INPUT_SLOTS) inv.setItem(s, null);
 
         inv.setItem(4, makeItem(Material.SMITHING_TABLE, "&#00E5FF&l📜 КОНТРАКТ ОБМЕНА (КАК В CS2)", List.of(
-                "&7Заполните &eвсе 10 слотов &7обычными предметами",
-                "&7из Minecraft, чтобы получить &b1 артефакт&7!",
+                "&7Положите &e10 обычных предметов &7из Minecraft,",
+                "&7чтобы обменять их на &bартефакт &7или &eценный лут&7!",
                 "",
-                " &f• Шанс награды зависит строго от &eпропорций",
-                "   &fценности вложенных предметов (10% за слот).",
+                " &f• Шанс каждого конкретного приза виден",
+                "   &fв реальном времени в книге снизу.",
                 " &c• Кастомные артефакты класть нельзя!"
         )));
 
@@ -101,6 +101,43 @@ public class MirTimeContracts extends JavaPlugin implements CommandExecutor, Lis
         return Tier.COMMON;
     }
 
+    private List<RewardEntry> getPoolByTier(Tier tier) {
+        return switch (tier) {
+            case LEGENDARY -> List.of(
+                    new RewardEntry("mtitems give %player% god_sword 1", "&#FFD700&l⚔ Меч «БОГА» XV", true),
+                    new RewardEntry("mtitems give %player% titan_chest 1", "&#0055ff&l🛡 Нагрудник Титана", true),
+                    new RewardEntry("mtitems give %player% dragon_elytra 1", "&d&l🐉 Элитры Дракона", true),
+                    new RewardEntry("mtitems give %player% phoenix_totem 1", "&#FF8800&l🔥 Перо Феникса", true),
+                    new RewardEntry("minecraft:give %player% netherite_ingot 4", "&#FFD700Незеритовый слиток (x4)", false),
+                    new RewardEntry("minecraft:give %player% enchanted_golden_apple 8", "&#FFD700Зачарованное яблоко (x8)", false)
+            );
+            case EPIC -> List.of(
+                    new RewardEntry("mtitems give %player% black_hole 1", "&5&l🌌 Чёрная Дыра", true),
+                    new RewardEntry("mtitems give %player% meteor_staff 1", "&#FF5500&l☄ Посох Метеорита", true),
+                    new RewardEntry("mtitems give %player% vampire_blade 1", "&c&l🩸 Клинок Вампира", true),
+                    new RewardEntry("mtitems give %player% thor_axe 1", "&#00E5FF&l⚡ Молот Тора", false),
+                    new RewardEntry("minecraft:give %player% totem_of_undying 3", "&eТотем бессмертия (x3)", false),
+                    new RewardEntry("minecraft:give %player% diamond_block 12", "&bАлмазный блок (x12)", false)
+            );
+            case RARE -> List.of(
+                    new RewardEntry("mtitems give %player% mega_trap 1", "&#00E5FF&l💠 Мега-Трапка 7×7", false),
+                    new RewardEntry("mtitems give %player% disorient 1", "&#9400d3&l🌀 Сфера Дезориентации", false),
+                    new RewardEntry("mtitems give %player% frost_staff 1", "&b&l❄ Ледяной Скипетр", false),
+                    new RewardEntry("minecraft:give %player% golden_apple 16", "&eЗолотое яблоко (x16)", false),
+                    new RewardEntry("minecraft:give %player% ender_pearl 16", "&3Эндер-жемчуг (x16)", false),
+                    new RewardEntry("minecraft:give %player% obsidian 64", "&5Обсидиан (x64)", false)
+            );
+            case COMMON -> List.of(
+                    new RewardEntry("mtitems give %player% trapka 1", "&#0055ff&l⬛ Обсидиановая Трапка", false),
+                    new RewardEntry("mtitems give %player% flash_pearl 1", "&#00E5FF&l👁 Око Пустоты", false),
+                    new RewardEntry("mtitems give %player% drill_pickaxe 1", "&#FF2A55&l⛏ Бур 3×3", false),
+                    new RewardEntry("minecraft:give %player% diamond 12", "&bАлмазы (x12)", false),
+                    new RewardEntry("minecraft:give %player% experience_bottle 64", "&aПузырёк опыта (x64)", false),
+                    new RewardEntry("minecraft:give %player% golden_carrot 64", "&6Золотая морковь (x64)", false)
+            );
+        };
+    }
+
     private void updateLivePreview(Inventory inv) {
         int filled = 0;
         Map<Tier, Integer> weights = new EnumMap<>(Tier.class);
@@ -121,18 +158,25 @@ public class MirTimeContracts extends JavaPlugin implements CommandExecutor, Lis
         List<String> lore = new ArrayList<>();
         lore.add("&7Заполнено слотов: &#00E5FF" + filled + " &8/ &f10");
         lore.add("");
+
         if (totalWeight > 0) {
-            lore.add("&fТекущие пропорции шансов:");
+            lore.add("&fВаши точные шансы на выпадение:");
             for (Tier t : Tier.values()) {
-                int pct = (int) Math.round((weights.get(t) * 100.0) / totalWeight);
-                if (pct > 0) lore.add(" &8▪ " + t.title + "&8: &#00FF66&l" + pct + "%");
+                int tierW = weights.get(t);
+                if (tierW <= 0) continue;
+                List<RewardEntry> pool = getPoolByTier(t);
+                double eachItemPct = ((tierW * 100.0) / totalWeight) / pool.size();
+                String pctText = String.format(Locale.US, "%.1f%%", eachItemPct);
+                for (RewardEntry entry : pool) {
+                    lore.add(" &8▪ " + entry.display() + " &8— &#00FF66&l" + pctText);
+                }
             }
         } else {
-            lore.add("&7Положите предметы в 10 слотов,");
-            lore.add("&7чтобы увидеть расчёт вероятностей.");
+            lore.add("&7Положите любые предметы в 10 слотов,");
+            lore.add("&7чтобы увидеть шанс на каждую награду.");
         }
 
-        inv.setItem(31, makeItem(Material.ENCHANTED_BOOK, "&#00E5FF&l📊 АНАЛИЗ ПРОПОРЦИЙ КОНТРАКТА", lore));
+        inv.setItem(31, makeItem(Material.ENCHANTED_BOOK, "&#00E5FF&l📊 ВАШИ ШАНСЫ НА ВЫПАДЕНИЕ", lore));
         inv.setItem(40, makeItem(
                 filled == 10 ? Material.ANVIL : Material.GRAY_DYE,
                 filled == 10 ? "&#00FF66&l⚡ ПОДПИСАТЬ КОНТРАКТ (10/10)" : "&c&l⏳ ЗАПОЛНИТЕ ВСЕ 10 СЛОТОВ (" + filled + "/10)",
@@ -190,7 +234,8 @@ public class MirTimeContracts extends JavaPlugin implements CommandExecutor, Lis
 
             Random rnd = new Random();
             Tier wonTier = lotteryPool.get(rnd.nextInt(lotteryPool.size()));
-            RewardEntry reward = pickRewardByTier(wonTier, rnd);
+            List<RewardEntry> pool = getPoolByTier(wonTier);
+            RewardEntry reward = pool.get(rnd.nextInt(pool.size()));
 
             p.playSound(p.getLocation(), Sound.BLOCK_ANVIL_USE, 1f, 1.2f);
             p.playSound(p.getLocation(), Sound.UI_TOAST_CHALLENGE_COMPLETE, 1.2f, 1.1f);
@@ -210,40 +255,6 @@ public class MirTimeContracts extends JavaPlugin implements CommandExecutor, Lis
         if (e.getView().getTitle().equals(color(GUI_TITLE))) {
             Bukkit.getScheduler().runTask(this, () -> updateLivePreview(e.getView().getTopInventory()));
         }
-    }
-
-    private RewardEntry pickRewardByTier(Tier tier, Random rnd) {
-        List<RewardEntry> pool = switch (tier) {
-            case LEGENDARY -> List.of(
-                    new RewardEntry("mtitems give %player% god_sword 1", "&#FFD700&l⚔ Меч «БОГА» XV", true),
-                    new RewardEntry("mtitems give %player% titan_chest 1", "&#0055ff&l🛡 Нагрудник Титана", true),
-                    new RewardEntry("mtitems give %player% dragon_elytra 1", "&d&l🐉 Элитры Дракона", true),
-                    new RewardEntry("mtitems give %player% phoenix_totem 1", "&#FF8800&l🔥 Перо Феникса", true),
-                    new RewardEntry("mtitems give %player% thor_axe 1", "&#00E5FF&l⚡ Молот Тора", true)
-            );
-            case EPIC -> List.of(
-                    new RewardEntry("mtitems give %player% black_hole 1", "&5&l🌌 Чёрная Дыра", true),
-                    new RewardEntry("mtitems give %player% meteor_staff 1", "&#FF5500&l☄ Посох Метеорита", true),
-                    new RewardEntry("mtitems give %player% vampire_blade 1", "&c&l🩸 Клинок Вампира", true),
-                    new RewardEntry("mtitems give %player% thor_axe 1", "&#00E5FF&l⚡ Молот Тора", false),
-                    new RewardEntry("mtitems give %player% soul_reaper 1", "&8&l💀 Коса Душ", false)
-            );
-            case RARE -> List.of(
-                    new RewardEntry("mtitems give %player% mega_trap 1", "&#00E5FF&l💠 Мега-Трапка 7×7", false),
-                    new RewardEntry("mtitems give %player% disorient 1", "&#9400d3&l🌀 Сфера Дезориентации", false),
-                    new RewardEntry("mtitems give %player% gravity_mace 1", "&#9400d3&l🔨 Грави-Молоток", false),
-                    new RewardEntry("mtitems give %player% frost_staff 1", "&b&l❄ Ледяной Скипетр", false),
-                    new RewardEntry("mtitems give %player% snipe_bow 1", "&#00FF66&l🏹 Снайперский Лук", false)
-            );
-            case COMMON -> List.of(
-                    new RewardEntry("mtitems give %player% trapka 1", "&#0055ff&l⬛ Обсидиановая Трапка", false),
-                    new RewardEntry("mtitems give %player% flash_pearl 1", "&#00E5FF&l👁 Око Пустоты", false),
-                    new RewardEntry("mtitems give %player% escape_feather 1", "&#FF8800&l🪶 Свиток Побега", false),
-                    new RewardEntry("mtitems give %player% cleanse_totem 1", "&e&l✨ Тотем Очищения", false),
-                    new RewardEntry("mtitems give %player% drill_pickaxe 1", "&#FF2A55&l⛏ Бур 3×3", false)
-            );
-        };
-        return pool.get(rnd.nextInt(pool.size()));
     }
 
     @EventHandler
