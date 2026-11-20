@@ -1,0 +1,10 @@
+name: MirTimeContracts
+version: '1.0.0'
+main: ru.mirtime.contracts.MirTimeContracts
+api-version: '1.21'
+softdepend:
+  - MirTimeItems
+commands:
+  contracts:
+    description: Открыть стол Контрактов Обмена (как в CS2)
+    aliases: [contract, tradeup, контракты, перековка]
