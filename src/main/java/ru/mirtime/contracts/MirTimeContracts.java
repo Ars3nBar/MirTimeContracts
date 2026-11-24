@@ -6,6 +6,7 @@ import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
+import org.bukkit.event.inventory.ClickType;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.inventory.InventoryCloseEvent;
 import org.bukkit.event.inventory.InventoryDragEvent;
@@ -16,6 +17,7 @@ import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.plugin.java.JavaPlugin;
+import org.bukkit.scheduler.BukkitRunnable;
 
 import java.util.*;
 import java.util.regex.Matcher;
@@ -29,6 +31,7 @@ public class MirTimeContracts extends JavaPlugin implements CommandExecutor, Lis
 
     public static class ContractHolder implements InventoryHolder {
         private Inventory inv;
+        public boolean animating = false;
         @Override public Inventory getInventory() { return inv; }
         public void setInventory(Inventory inv) { this.inv = inv; }
     }
@@ -45,14 +48,14 @@ public class MirTimeContracts extends JavaPlugin implements CommandExecutor, Lis
         Tier(String title, int weight) { this.title = title; this.weight = weight; }
     }
 
-    public record RewardEntry(String cmd, String display, int weight, boolean broadcast) {}
+    public record RewardEntry(String cmd, String display, Material icon, int weight, boolean broadcast) {}
 
     @Override
     public void onEnable() {
         mtItemKey = new NamespacedKey("mirtimeitems", "mt_item_id");
         if (getCommand("contracts") != null) getCommand("contracts").setExecutor(this);
         Bukkit.getPluginManager().registerEvents(this, this);
-        getLogger().info("MirTimeContracts v2.4.0 (5 тиров ценности, защита от мусора и баланс наград) запущен!");
+        getLogger().info("MirTimeContracts v2.6.0 (GUI-анимация перековки CS2 + 10 по 1 шт.) запущен!");
     }
 
     @Override
@@ -75,11 +78,12 @@ public class MirTimeContracts extends JavaPlugin implements CommandExecutor, Lis
         for (int s : new int[]{2, 3, 5, 6, 47, 48, 50, 51}) inv.setItem(s, cyan);
         for (int s : INPUT_SLOTS) inv.setItem(s, null);
 
-        inv.setItem(4, makeItem(Material.SMITHING_TABLE, "&#0055ff&l⚡ &#00E5FF&lКОНТРАКТ ОБМЕНА", List.of(
-                "&7Положите &#00FF66любые 10 предметов &7из Minecraft,",
-                "&7чтобы перековать их в новую награду!",
+        inv.setItem(4, makeItem(Material.SMITHING_TABLE, "&#0055ff&l⚡ &#00E5FF&lКОНТРАКТ ОБМЕНА &8(&#00FF6610 по 1 шт.&8)", List.of(
+                "&7Положите &#00FF6610 предметов по 1 штуке &7в ячейки",
+                "&7по центру, чтобы запустить перековку!",
                 "",
-                " &#0055ff● &fИз дешёвых блоков (земля, булыжник и т.д.)",
+                " &#0055ff● &fВ каждую ячейку кладётся строго &#00FF661 шт.",
+                " &#0055ff● &fИз земли, булыжника и дешёвых блоков",
                 "   &cкастомные артефакты НЕ выпадают!",
                 " &#0055ff● &fЧем ценнее ресурсы — тем круче лут."
         )));
@@ -158,42 +162,42 @@ public class MirTimeContracts extends JavaPlugin implements CommandExecutor, Lis
     private List<RewardEntry> getPoolByTier(Tier tier) {
         return switch (tier) {
             case LEGENDARY -> List.of(
-                    new RewardEntry("mtitems give %player% god_sword 1", "&#FFD700&l⚔ Меч «БОГА» XV", 3, true),
-                    new RewardEntry("mtitems give %player% titan_chest 1", "&#0055ff&l🛡 Нагрудник Титана", 5, true),
-                    new RewardEntry("mtitems give %player% dragon_elytra 1", "&d&l🐉 Элитры Дракона", 5, true),
-                    new RewardEntry("mtitems give %player% phoenix_totem 1", "&#FF8800&l🔥 Перо Феникса", 7, true),
-                    new RewardEntry("minecraft:give %player% netherite_ingot 2", "&#FFD700Незеритовый слиток (x2)", 35, false),
-                    new RewardEntry("minecraft:give %player% enchanted_golden_apple 4", "&#FFD700Зачарованное яблоко (x4)", 45, false)
+                    new RewardEntry("mtitems give %player% god_sword 1", "&#FFD700&l⚔ Меч «БОГА» XV", Material.NETHERITE_SWORD, 3, true),
+                    new RewardEntry("mtitems give %player% titan_chest 1", "&#0055ff&l🛡 Нагрудник Титана", Material.NETHERITE_CHESTPLATE, 5, true),
+                    new RewardEntry("mtitems give %player% dragon_elytra 1", "&d&l🐉 Элитры Дракона", Material.ELYTRA, 5, true),
+                    new RewardEntry("mtitems give %player% phoenix_totem 1", "&#FF8800&l🔥 Перо Феникса", Material.BLAZE_POWDER, 7, true),
+                    new RewardEntry("minecraft:give %player% netherite_ingot 2", "&#FFD700Незеритовый слиток (x2)", Material.NETHERITE_INGOT, 35, false),
+                    new RewardEntry("minecraft:give %player% enchanted_golden_apple 4", "&#FFD700Зачарованное яблоко (x4)", Material.ENCHANTED_GOLDEN_APPLE, 45, false)
             );
             case EPIC -> List.of(
-                    new RewardEntry("mtitems give %player% black_hole 1", "&5&l🌌 Чёрная Дыра", 5, true),
-                    new RewardEntry("mtitems give %player% meteor_staff 1", "&#FF5500&l☄ Посох Метеорита", 6, true),
-                    new RewardEntry("mtitems give %player% vampire_blade 1", "&c&l🩸 Клинок Вампира", 7, true),
-                    new RewardEntry("mtitems give %player% thor_axe 1", "&#00E5FF&l⚡ Молот Тора", 12, false),
-                    new RewardEntry("minecraft:give %player% totem_of_undying 2", "&eТотем бессмертия (x2)", 30, false),
-                    new RewardEntry("minecraft:give %player% diamond_block 6", "&bАлмазный блок (x6)", 40, false)
+                    new RewardEntry("mtitems give %player% black_hole 1", "&5&l🌌 Чёрная Дыра", Material.ENDER_EYE, 5, true),
+                    new RewardEntry("mtitems give %player% meteor_staff 1", "&#FF5500&l☄ Посох Метеорита", Material.BLAZE_ROD, 6, true),
+                    new RewardEntry("mtitems give %player% vampire_blade 1", "&c&l🩸 Клинок Вампира", Material.DIAMOND_SWORD, 7, true),
+                    new RewardEntry("mtitems give %player% thor_axe 1", "&#00E5FF&l⚡ Молот Тора", Material.DIAMOND_AXE, 12, false),
+                    new RewardEntry("minecraft:give %player% totem_of_undying 2", "&eТотем бессмертия (x2)", Material.TOTEM_OF_UNDYING, 30, false),
+                    new RewardEntry("minecraft:give %player% diamond_block 6", "&bАлмазный блок (x6)", Material.DIAMOND_BLOCK, 40, false)
             );
             case RARE -> List.of(
-                    new RewardEntry("mtitems give %player% mega_trap 1", "&#00E5FF&l💠 Мега-Трапка 7×7", 10, false),
-                    new RewardEntry("mtitems give %player% disorient 1", "&#9400d3&l🌀 Сфера Дезориентации", 12, false),
-                    new RewardEntry("mtitems give %player% frost_staff 1", "&b&l❄ Ледяной Скипетр", 13, false),
-                    new RewardEntry("minecraft:give %player% golden_apple 10", "&eЗолотое яблоко (x10)", 20, false),
-                    new RewardEntry("minecraft:give %player% ender_pearl 16", "&3Эндер-жемчуг (x16)", 20, false),
-                    new RewardEntry("minecraft:give %player% obsidian 64", "&5Обсидиан (x64)", 25, false)
+                    new RewardEntry("mtitems give %player% mega_trap 1", "&#00E5FF&l💠 Мега-Трапка 7×7", Material.BEACON, 10, false),
+                    new RewardEntry("mtitems give %player% disorient 1", "&#9400d3&l🌀 Сфера Дезориентации", Material.HEART_OF_THE_SEA, 12, false),
+                    new RewardEntry("mtitems give %player% frost_staff 1", "&b&l❄ Ледяной Скипетр", Material.BREEZE_ROD, 13, false),
+                    new RewardEntry("minecraft:give %player% golden_apple 10", "&eЗолотое яблоко (x10)", Material.GOLDEN_APPLE, 20, false),
+                    new RewardEntry("minecraft:give %player% ender_pearl 16", "&3Эндер-жемчуг (x16)", Material.ENDER_PEARL, 20, false),
+                    new RewardEntry("minecraft:give %player% obsidian 64", "&5Обсидиан (x64)", Material.OBSIDIAN, 25, false)
             );
             case COMMON -> List.of(
-                    new RewardEntry("mtitems give %player% trapka 1", "&#0055ff&l⬛ Обсидиановая Трапка", 6, false),
-                    new RewardEntry("mtitems give %player% flash_pearl 1", "&#00E5FF&l👁 Око Пустоты", 8, false),
-                    new RewardEntry("mtitems give %player% drill_pickaxe 1", "&#FF2A55&l⛏ Бур 3×3", 10, false),
-                    new RewardEntry("minecraft:give %player% diamond 6", "&bАлмазы (x6)", 22, false),
-                    new RewardEntry("minecraft:give %player% experience_bottle 48", "&aПузырёк опыта (x48)", 27, false),
-                    new RewardEntry("minecraft:give %player% golden_carrot 48", "&6Золотая морковь (x48)", 27, false)
+                    new RewardEntry("mtitems give %player% trapka 1", "&#0055ff&l⬛ Обсидиановая Трапка", Material.OBSIDIAN, 6, false),
+                    new RewardEntry("mtitems give %player% flash_pearl 1", "&#00E5FF&l👁 Око Пустоты", Material.ENDER_PEARL, 8, false),
+                    new RewardEntry("mtitems give %player% drill_pickaxe 1", "&#FF2A55&l⛏ Бур 3×3", Material.IRON_PICKAXE, 10, false),
+                    new RewardEntry("minecraft:give %player% diamond 6", "&bАлмазы (x6)", Material.DIAMOND, 22, false),
+                    new RewardEntry("minecraft:give %player% experience_bottle 48", "&aПузырёк опыта (x48)", Material.EXPERIENCE_BOTTLE, 27, false),
+                    new RewardEntry("minecraft:give %player% golden_carrot 48", "&6Золотая морковь (x48)", Material.GOLDEN_CARROT, 27, false)
             );
             case TRASH -> List.of(
-                    new RewardEntry("minecraft:give %player% iron_ingot 16", "&fЖелезный слиток (x16)", 25, false),
-                    new RewardEntry("minecraft:give %player% gold_ingot 12", "&eЗолотой слиток (x12)", 20, false),
-                    new RewardEntry("minecraft:give %player% experience_bottle 16", "&aПузырёк опыта (x16)", 25, false),
-                    new RewardEntry("minecraft:give %player% cooked_beef 32", "&6Жареная говядина (x32)", 30, false)
+                    new RewardEntry("minecraft:give %player% iron_ingot 16", "&fЖелезный слиток (x16)", Material.IRON_INGOT, 25, false),
+                    new RewardEntry("minecraft:give %player% gold_ingot 12", "&eЗолотой слиток (x12)", Material.GOLD_INGOT, 20, false),
+                    new RewardEntry("minecraft:give %player% experience_bottle 16", "&aПузырёк опыта (x16)", Material.EXPERIENCE_BOTTLE, 25, false),
+                    new RewardEntry("minecraft:give %player% cooked_beef 32", "&6Жареная говядина (x32)", Material.COOKED_BEEF, 30, false)
             );
         };
     }
@@ -209,15 +213,14 @@ public class MirTimeContracts extends JavaPlugin implements CommandExecutor, Lis
             if (it != null && !it.getType().isAir()) {
                 filled++;
                 Tier t = getVanillaTier(it);
-                int w = t.weight * Math.min(it.getAmount(), 16);
-                tierWeights.put(t, tierWeights.get(t) + w);
-                totalTierWeight += w;
+                tierWeights.put(t, tierWeights.get(t) + t.weight);
+                totalTierWeight += t.weight;
             }
         }
 
         List<String> lore = new ArrayList<>();
         lore.add("&#0055ff&m                              ");
-        lore.add(" &#0055ff● &fЗаполнено ячеек: &#00FF66" + filled + " &8/ &f10");
+        lore.add(" &#0055ff● &fЗаполнено ячеек: &#00FF66" + filled + " &8/ &f10 &7(по 1 шт.)");
         lore.add("&#0055ff&m                              ");
 
         if (totalTierWeight > 0) {
@@ -240,7 +243,7 @@ public class MirTimeContracts extends JavaPlugin implements CommandExecutor, Lis
             }
         } else {
             lore.add("");
-            lore.add("&7Положите любые 10 предметов сверху,");
+            lore.add("&7Положите 10 предметов (по 1 шт.) сверху,");
             lore.add("&7чтобы увидеть шанс на каждую награду.");
         }
 
@@ -249,14 +252,19 @@ public class MirTimeContracts extends JavaPlugin implements CommandExecutor, Lis
                 filled == 10 ? Material.ANVIL : Material.GRAY_DYE,
                 filled == 10 ? "&#0055ff&l⚡ &#00FF66&lПОДПИСАТЬ КОНТРАКТ (10/10)" : "&c&l[⏳] ЗАПОЛНИТЕ 10 ЯЧЕЕК (" + filled + "/10)",
                 filled == 10
-                        ? List.of("&7Все 10 ячеек готовы к перековке!", "", "&#00FF66➥ Нажмите&f, чтобы получить награду!")
-                        : List.of("&7Для запуска контракта нужно заполнить", "&7все &f10 &7центральных ячеек.")
+                        ? List.of("&7Все 10 ячеек готовы к перековке!", "", "&#00FF66➥ Нажмите&f, чтобы запустить анимацию!")
+                        : List.of("&7Для запуска контракта нужно заполнить", "&7все &f10 &7центральных ячеек (по 1 шт.).")
         ));
     }
     @EventHandler(priority = EventPriority.HIGHEST)
     public void onMenuClick(InventoryClickEvent e) {
         if (!(e.getWhoClicked() instanceof Player p)) return;
-        if (!(e.getView().getTopInventory().getHolder() instanceof ContractHolder)) return;
+        if (!(e.getView().getTopInventory().getHolder() instanceof ContractHolder holder)) return;
+
+        if (holder.animating) {
+            e.setCancelled(true);
+            return;
+        }
 
         ItemStack current = e.getCurrentItem();
         ItemStack cursor = e.getCursor();
@@ -267,9 +275,56 @@ public class MirTimeContracts extends JavaPlugin implements CommandExecutor, Lis
             return;
         }
 
+        Inventory top = e.getView().getTopInventory();
         int raw = e.getRawSlot();
-        if (raw >= 54 || isInputSlot(raw)) {
-            Bukkit.getScheduler().runTask(this, () -> updateLivePreview(e.getView().getTopInventory()));
+
+        if (raw >= 54) {
+            if (e.getClick() == ClickType.SHIFT_LEFT || e.getClick() == ClickType.SHIFT_RIGHT) {
+                e.setCancelled(true);
+                if (current == null || current.getType().isAir()) return;
+                for (int s : INPUT_SLOTS) {
+                    ItemStack inSlot = top.getItem(s);
+                    if (inSlot == null || inSlot.getType().isAir()) {
+                        ItemStack single = current.clone();
+                        single.setAmount(1);
+                        top.setItem(s, single);
+                        current.setAmount(current.getAmount() - 1);
+                        p.playSound(p.getLocation(), Sound.ENTITY_ITEM_PICKUP, 0.7f, 1.3f);
+                        updateLivePreview(top);
+                        return;
+                    }
+                }
+            }
+            return;
+        }
+
+        if (isInputSlot(raw)) {
+            e.setCancelled(true);
+            ItemStack existing = top.getItem(raw);
+
+            if ((existing == null || existing.getType().isAir()) && cursor != null && !cursor.getType().isAir()) {
+                ItemStack single = cursor.clone();
+                single.setAmount(1);
+                top.setItem(raw, single);
+                cursor.setAmount(cursor.getAmount() - 1);
+                p.playSound(p.getLocation(), Sound.ENTITY_ITEM_PICKUP, 0.7f, 1.3f);
+                updateLivePreview(top);
+                return;
+            }
+
+            if (existing != null && !existing.getType().isAir() && (cursor == null || cursor.getType().isAir())) {
+                top.setItem(raw, null);
+                HashMap<Integer, ItemStack> left = p.getInventory().addItem(existing);
+                for (ItemStack drop : left.values()) {
+                    p.getWorld().dropItemNaturally(p.getLocation(), drop);
+                }
+                p.playSound(p.getLocation(), Sound.ENTITY_ITEM_PICKUP, 0.7f, 0.9f);
+                updateLivePreview(top);
+                return;
+            }
+
+            p.playSound(p.getLocation(), Sound.ENTITY_VILLAGER_NO, 0.8f, 1.2f);
+            p.sendMessage(color("&#0055ff&l⚡ &#00E5FF&lКОНТРАКТЫ &8» &eВ каждую ячейку можно положить строго 1 предмет!"));
             return;
         }
 
@@ -280,7 +335,6 @@ public class MirTimeContracts extends JavaPlugin implements CommandExecutor, Lis
         }
 
         if (raw == 40) {
-            Inventory top = e.getView().getTopInventory();
             int filled = 0;
             List<Tier> lotteryTiers = new ArrayList<>();
 
@@ -289,19 +343,17 @@ public class MirTimeContracts extends JavaPlugin implements CommandExecutor, Lis
                 if (it != null && !it.getType().isAir()) {
                     filled++;
                     Tier t = getVanillaTier(it);
-                    int tickets = t.weight * Math.min(it.getAmount(), 16);
-                    for (int k = 0; k < tickets; k++) lotteryTiers.add(t);
+                    for (int k = 0; k < t.weight; k++) lotteryTiers.add(t);
                 }
             }
 
             if (filled < 10) {
                 p.playSound(p.getLocation(), Sound.ENTITY_VILLAGER_NO, 1f, 1f);
-                p.sendMessage(color("&#0055ff&l⚡ &#00E5FF&lКОНТРАКТЫ &8» &cЗаполните все 10 ячеек контракта! Сейчас: &e" + filled + "/10"));
+                p.sendMessage(color("&#0055ff&l⚡ &#00E5FF&lКОНТРАКТЫ &8» &cЗаполните все 10 ячеек контракта (по 1 шт.)! Сейчас: &e" + filled + "/10"));
                 return;
             }
 
-            for (int s : INPUT_SLOTS) top.setItem(s, null);
-            p.closeInventory();
+            holder.animating = true;
 
             Random rnd = new Random();
             Tier wonTier = lotteryTiers.get(rnd.nextInt(lotteryTiers.size()));
@@ -310,44 +362,106 @@ public class MirTimeContracts extends JavaPlugin implements CommandExecutor, Lis
             int totalPoolWeight = pool.stream().mapToInt(RewardEntry::weight).sum();
             int roll = rnd.nextInt(totalPoolWeight);
             int acc = 0;
-            RewardEntry reward = pool.get(0);
+            RewardEntry finalReward = pool.get(0);
             for (RewardEntry entry : pool) {
                 acc += entry.weight();
                 if (roll < acc) {
-                    reward = entry;
+                    finalReward = entry;
                     break;
                 }
             }
 
-            p.playSound(p.getLocation(), Sound.BLOCK_ANVIL_USE, 1f, 1.2f);
-            p.playSound(p.getLocation(), Sound.UI_TOAST_CHALLENGE_COMPLETE, 1.2f, 1.1f);
-            p.getWorld().spawnParticle(Particle.TOTEM_OF_UNDYING, p.getLocation().add(0, 1, 0), 90, 0.7, 0.8, 0.7, 0.2);
-
-            Bukkit.dispatchCommand(Bukkit.getConsoleSender(), reward.cmd().replace("%player%", p.getName()));
-            p.sendMessage(color("&#0055ff&l⚡ &#00E5FF&lКОНТРАКТЫ &8» &#00FF66&lКОНТРАКТ ПОДПИСАН (" + wonTier.title + "&#00FF66&l)! &fВаш приз: " + reward.display()));
-
-            if (reward.broadcast()) {
-                Bukkit.broadcastMessage(color("&#0055ff&l⚡ &#00E5FF&lКОНТРАКТЫ &8» &#FFD700&lДЖЕКПОТ! &fИгрок &#00E5FF" + p.getName() + " &fвыбил в контракте: " + reward.display() + "&f!"));
-            }
+            startForgeAnimation(p, top, holder, wonTier, pool, finalReward);
         }
+    }
+    private void startForgeAnimation(Player p, Inventory top, ContractHolder holder, Tier wonTier, List<RewardEntry> pool, RewardEntry finalReward) {
+        top.setItem(40, makeItem(Material.ORANGE_STAINED_GLASS_PANE, "&#00E5FF&l⟳ ИДЁТ ПЕРЕКОВКА КОНТРАКТА...", null));
+        top.setItem(42, makeItem(Material.BLACK_STAINED_GLASS_PANE, " ", null));
+
+        int[] collapseOrder = {11, 20, 15, 24, 12, 21, 14, 23, 13};
+        ItemStack cyanGlow = makeItem(Material.LIGHT_BLUE_STAINED_GLASS_PANE, "&#00E5FF&l✦", null);
+        ItemStack limeGlow = makeItem(Material.LIME_STAINED_GLASS_PANE, "&#00FF66&l⚡", null);
+        Random rnd = new Random();
+
+        new BukkitRunnable() {
+            int step = 0;
+            boolean rewarded = false;
+
+            @Override
+            public void run() {
+                if (!p.isOnline()) {
+                    giveRewardNow();
+                    cancel();
+                    return;
+                }
+
+                if (step < collapseOrder.length) {
+                    int s = collapseOrder[step];
+                    top.setItem(s, (step % 2 == 0) ? cyanGlow : limeGlow);
+                    top.setItem(22, makeItem(Material.NETHER_STAR, "&#0055ff&l⚡ &#00E5FF&lСлияние ресурсов... &8(&#00FF66" + ((step + 1) * 10) + "%&8)", null));
+                    p.playSound(p.getLocation(), Sound.BLOCK_AMETHYST_BLOCK_CHIME, 1f, 0.8f + (step * 0.12f));
+                } else if (step < 21) {
+                    RewardEntry fake = pool.get(rnd.nextInt(pool.size()));
+                    top.setItem(22, makeItem(fake.icon(), fake.display(), List.of("&7Определение награды...")));
+                    for (int s : collapseOrder) {
+                        top.setItem(s, (step % 2 == 0) ? limeGlow : cyanGlow);
+                    }
+                    p.playSound(p.getLocation(), Sound.UI_BUTTON_CLICK, 0.9f, 1.0f + ((step - 9) * 0.08f));
+                } else if (step == 21) {
+                    for (int s : collapseOrder) top.setItem(s, limeGlow);
+                    top.setItem(22, makeItem(finalReward.icon(), finalReward.display(), List.of(
+                            "",
+                            "&#00FF66&l✔ ВАША НАГРАДА ПОЛУЧЕНА!"
+                    )));
+                    top.setItem(40, makeItem(Material.EMERALD_BLOCK, "&#00FF66&l✔ КОНТРАКТ ВЫПОЛНЕН!", null));
+                    giveRewardNow();
+                } else if (step >= 26) {
+                    holder.animating = false;
+                    if (p.getOpenInventory().getTopInventory().equals(top)) {
+                        p.closeInventory();
+                    }
+                    cancel();
+                }
+
+                step++;
+            }
+
+            private void giveRewardNow() {
+                if (rewarded) return;
+                rewarded = true;
+                for (int s : INPUT_SLOTS) top.setItem(s, null);
+
+                p.playSound(p.getLocation(), Sound.BLOCK_ANVIL_USE, 1f, 1.2f);
+                p.playSound(p.getLocation(), Sound.UI_TOAST_CHALLENGE_COMPLETE, 1.2f, 1.1f);
+                p.getWorld().spawnParticle(Particle.TOTEM_OF_UNDYING, p.getLocation().add(0, 1, 0), 90, 0.7, 0.8, 0.7, 0.2);
+
+                Bukkit.dispatchCommand(Bukkit.getConsoleSender(), finalReward.cmd().replace("%player%", p.getName()));
+                p.sendMessage(color("&#0055ff&l⚡ &#00E5FF&lКОНТРАКТЫ &8» &#00FF66&lКОНТРАКТ ПОДПИСАН (" + wonTier.title + "&#00FF66&l)! &fВаш приз: " + finalReward.display()));
+
+                if (finalReward.broadcast()) {
+                    Bukkit.broadcastMessage(color("&#0055ff&l⚡ &#00E5FF&lКОНТРАКТЫ &8» &#FFD700&lДЖЕКПОТ! &fИгрок &#00E5FF" + p.getName() + " &fвыбил в контракте: " + finalReward.display() + "&f!"));
+                }
+            }
+        }.runTaskTimer(this, 0L, 2L);
     }
 
     @EventHandler(priority = EventPriority.HIGHEST)
     public void onMenuDrag(InventoryDragEvent e) {
-        if (!(e.getView().getTopInventory().getHolder() instanceof ContractHolder)) return;
-        for (int raw : e.getRawSlots()) {
-            if (raw < 54 && !isInputSlot(raw)) {
-                e.setCancelled(true);
-                return;
+        if (e.getView().getTopInventory().getHolder() instanceof ContractHolder) {
+            for (int raw : e.getRawSlots()) {
+                if (raw < 54) {
+                    e.setCancelled(true);
+                    return;
+                }
             }
         }
-        Bukkit.getScheduler().runTask(this, () -> updateLivePreview(e.getView().getTopInventory()));
     }
 
     @EventHandler
     public void onMenuClose(InventoryCloseEvent e) {
         if (!(e.getPlayer() instanceof Player p)) return;
-        if (!(e.getInventory().getHolder() instanceof ContractHolder)) return;
+        if (!(e.getInventory().getHolder() instanceof ContractHolder holder)) return;
+        if (holder.animating) return;
 
         Inventory top = e.getInventory();
         for (int s : INPUT_SLOTS) {
