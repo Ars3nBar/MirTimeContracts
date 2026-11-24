@@ -34,17 +34,17 @@ public class MirTimeContracts extends JavaPlugin implements CommandExecutor, Lis
     }
 
     public enum Tier {
+        TRASH("&7Мусорный (без артефактов)", 2),
         COMMON("&#00FF66Обычный", 10),
-        RARE("&#00E5FFРедкий", 28),
-        EPIC("&#0055ffЭпический", 65),
-        LEGENDARY("&#FFD700&lЛегендарный", 140);
+        RARE("&#00E5FFРедкий", 32),
+        EPIC("&#0055ffЭпический", 75),
+        LEGENDARY("&#FFD700&lЛегендарный", 160);
 
         final String title;
         final int weight;
         Tier(String title, int weight) { this.title = title; this.weight = weight; }
     }
 
-    // Индивидуальный вес (weight) для каждого приза внутри тира!
     public record RewardEntry(String cmd, String display, int weight, boolean broadcast) {}
 
     @Override
@@ -52,7 +52,7 @@ public class MirTimeContracts extends JavaPlugin implements CommandExecutor, Lis
         mtItemKey = new NamespacedKey("mirtimeitems", "mt_item_id");
         if (getCommand("contracts") != null) getCommand("contracts").setExecutor(this);
         Bukkit.getPluginManager().registerEvents(this, this);
-        getLogger().info("MirTimeContracts v2.3.0 (Сбалансированные шансы, ContractHolder и дизайн Mir-Time) запущен!");
+        getLogger().info("MirTimeContracts v2.4.0 (5 тиров ценности, защита от мусора и баланс наград) запущен!");
     }
 
     @Override
@@ -76,23 +76,24 @@ public class MirTimeContracts extends JavaPlugin implements CommandExecutor, Lis
         for (int s : INPUT_SLOTS) inv.setItem(s, null);
 
         inv.setItem(4, makeItem(Material.SMITHING_TABLE, "&#0055ff&l⚡ &#00E5FF&lКОНТРАКТ ОБМЕНА", List.of(
-                "&7Положите &#00FF6610 ванильных предметов &7в пустые",
-                "&7ячейки по центру, чтобы перековать их",
-                "&7в &#00E5FFкастомный артефакт &7или &#00FF66ценный лут&7!",
+                "&7Положите &#00FF66любые 10 предметов &7из Minecraft,",
+                "&7чтобы перековать их в новую награду!",
                 "",
-                " &#0055ff● &fЧем реже ресурсы — тем выше шанс",
-                "   &fна &#FFD700Легендарные &fартефакты.",
-                " &c● Кастомные предметы класть нельзя!"
+                " &#0055ff● &fИз дешёвых блоков (земля, булыжник и т.д.)",
+                "   &cкастомные артефакты НЕ выпадают!",
+                " &#0055ff● &fЧем ценнее ресурсы — тем круче лут."
         )));
 
-        inv.setItem(38, makeItem(Material.NETHER_STAR, "&#0055ff[i] &#00E5FF&lЦенность ресурсов", List.of(
+        inv.setItem(38, makeItem(Material.NETHER_STAR, "&#0055ff[i] &#00E5FF&lЦенность предметов", List.of(
                 " &#FFD700★ Легендарный: &fНезерит, Звезда Незера,",
                 "   &fМаяк, Элитры, Тяжёлое ядро, Яйцо дракона",
                 " &#0055ff★ Эпический: &fАлм/Изумр блоки, Чар. яблоко,",
-                "   &fТотем, Обломки, Кристалл Энда",
+                "   &fТотем, Обломки, Кристалл Энда, Сердце моря",
                 " &#00E5FF★ Редкий: &fАлмазы, Изумруды, Зол. яблоко,",
-                "   &fОбсидиан, Жемчуг, Стержни, Золотые блоки",
-                " &#00FF66★ Обычный: &fОстальные ванильные предметы"
+                "   &fОбсидиан, Жемчуг, Стержни, Шалкеры, Зол. блоки",
+                " &#00FF66★ Обычный: &fЖелезо, Золото, Медь, Уголь,",
+                "   &fРедстоун, Лазурит, Кварц, Порох, Кожа",
+                " &7★ Мусор: &fЗемля, камень, дерево, песок и др."
         )));
 
         inv.setItem(42, makeItem(Material.BARRIER, "&c&l[✖] Закрыть контракт", List.of(
@@ -103,7 +104,6 @@ public class MirTimeContracts extends JavaPlugin implements CommandExecutor, Lis
         updateLivePreview(inv);
         p.openInventory(inv);
     }
-
     private boolean isInputSlot(int rawSlot) {
         for (int s : INPUT_SLOTS) if (s == rawSlot) return true;
         return false;
@@ -116,20 +116,43 @@ public class MirTimeContracts extends JavaPlugin implements CommandExecutor, Lis
 
     private Tier getVanillaTier(ItemStack is) {
         Material m = is.getType();
+        String name = m.name();
+
         if (m == Material.NETHERITE_INGOT || m == Material.NETHERITE_BLOCK || m == Material.NETHER_STAR
-                || m == Material.BEACON || m == Material.ELYTRA || m == Material.DRAGON_EGG || m == Material.HEAVY_CORE) {
+                || m == Material.BEACON || m == Material.ELYTRA || m == Material.DRAGON_EGG
+                || m == Material.HEAVY_CORE || name.startsWith("NETHERITE_")) {
             return Tier.LEGENDARY;
         }
+
         if (m == Material.DIAMOND_BLOCK || m == Material.EMERALD_BLOCK || m == Material.ENCHANTED_GOLDEN_APPLE
-                || m == Material.TOTEM_OF_UNDYING || m == Material.NETHERITE_SCRAP || m == Material.END_CRYSTAL || m == Material.ANCIENT_DEBRIS) {
+                || m == Material.TOTEM_OF_UNDYING || m == Material.NETHERITE_SCRAP || m == Material.END_CRYSTAL
+                || m == Material.ANCIENT_DEBRIS || m == Material.HEART_OF_THE_SEA || m == Material.CONDUIT
+                || m == Material.WITHER_SKELETON_SKULL) {
             return Tier.EPIC;
         }
+
         if (m == Material.DIAMOND || m == Material.EMERALD || m == Material.GOLDEN_APPLE
                 || m == Material.OBSIDIAN || m == Material.CRYING_OBSIDIAN || m == Material.ENDER_PEARL
-                || m == Material.BLAZE_ROD || m == Material.GHAST_TEAR || m == Material.GOLD_BLOCK) {
+                || m == Material.BLAZE_ROD || m == Material.GHAST_TEAR || m == Material.GOLD_BLOCK
+                || m == Material.SHULKER_SHELL || name.endsWith("SHULKER_BOX") || m == Material.TRIDENT
+                || m == Material.ENCHANTED_BOOK || m == Material.EXPERIENCE_BOTTLE || m == Material.PHANTOM_MEMBRANE
+                || name.startsWith("DIAMOND_")) {
             return Tier.RARE;
         }
-        return Tier.COMMON;
+
+        if (m == Material.IRON_INGOT || m == Material.IRON_BLOCK || m == Material.GOLD_INGOT
+                || m == Material.COPPER_INGOT || m == Material.COPPER_BLOCK || m == Material.COAL
+                || m == Material.COAL_BLOCK || m == Material.REDSTONE || m == Material.REDSTONE_BLOCK
+                || m == Material.LAPIS_LAZULI || m == Material.LAPIS_BLOCK || m == Material.QUARTZ
+                || m == Material.QUARTZ_BLOCK || m == Material.AMETHYST_SHARD || m == Material.GUNPOWDER
+                || m == Material.SLIME_BALL || m == Material.MAGMA_CREAM || m == Material.LEATHER
+                || m == Material.ENDER_EYE || m == Material.GOLDEN_CARROT || m == Material.GLOWSTONE_DUST
+                || m == Material.TNT || m == Material.BOOKSHELF || m == Material.ANVIL
+                || name.startsWith("IRON_") || name.startsWith("GOLDEN_")) {
+            return Tier.COMMON;
+        }
+
+        return Tier.TRASH;
     }
 
     private List<RewardEntry> getPoolByTier(Tier tier) {
@@ -139,8 +162,8 @@ public class MirTimeContracts extends JavaPlugin implements CommandExecutor, Lis
                     new RewardEntry("mtitems give %player% titan_chest 1", "&#0055ff&l🛡 Нагрудник Титана", 5, true),
                     new RewardEntry("mtitems give %player% dragon_elytra 1", "&d&l🐉 Элитры Дракона", 5, true),
                     new RewardEntry("mtitems give %player% phoenix_totem 1", "&#FF8800&l🔥 Перо Феникса", 7, true),
-                    new RewardEntry("minecraft:give %player% netherite_ingot 3", "&#FFD700Незеритовый слиток (x3)", 35, false),
-                    new RewardEntry("minecraft:give %player% enchanted_golden_apple 6", "&#FFD700Зачарованное яблоко (x6)", 45, false)
+                    new RewardEntry("minecraft:give %player% netherite_ingot 2", "&#FFD700Незеритовый слиток (x2)", 35, false),
+                    new RewardEntry("minecraft:give %player% enchanted_golden_apple 4", "&#FFD700Зачарованное яблоко (x4)", 45, false)
             );
             case EPIC -> List.of(
                     new RewardEntry("mtitems give %player% black_hole 1", "&5&l🌌 Чёрная Дыра", 5, true),
@@ -148,26 +171,33 @@ public class MirTimeContracts extends JavaPlugin implements CommandExecutor, Lis
                     new RewardEntry("mtitems give %player% vampire_blade 1", "&c&l🩸 Клинок Вампира", 7, true),
                     new RewardEntry("mtitems give %player% thor_axe 1", "&#00E5FF&l⚡ Молот Тора", 12, false),
                     new RewardEntry("minecraft:give %player% totem_of_undying 2", "&eТотем бессмертия (x2)", 30, false),
-                    new RewardEntry("minecraft:give %player% diamond_block 8", "&bАлмазный блок (x8)", 40, false)
+                    new RewardEntry("minecraft:give %player% diamond_block 6", "&bАлмазный блок (x6)", 40, false)
             );
             case RARE -> List.of(
                     new RewardEntry("mtitems give %player% mega_trap 1", "&#00E5FF&l💠 Мега-Трапка 7×7", 10, false),
                     new RewardEntry("mtitems give %player% disorient 1", "&#9400d3&l🌀 Сфера Дезориентации", 12, false),
                     new RewardEntry("mtitems give %player% frost_staff 1", "&b&l❄ Ледяной Скипетр", 13, false),
-                    new RewardEntry("minecraft:give %player% golden_apple 12", "&eЗолотое яблоко (x12)", 20, false),
+                    new RewardEntry("minecraft:give %player% golden_apple 10", "&eЗолотое яблоко (x10)", 20, false),
                     new RewardEntry("minecraft:give %player% ender_pearl 16", "&3Эндер-жемчуг (x16)", 20, false),
                     new RewardEntry("minecraft:give %player% obsidian 64", "&5Обсидиан (x64)", 25, false)
             );
             case COMMON -> List.of(
-                    new RewardEntry("mtitems give %player% trapka 1", "&#0055ff&l⬛ Обсидиановая Трапка", 8, false),
-                    new RewardEntry("mtitems give %player% flash_pearl 1", "&#00E5FF&l👁 Око Пустоты", 10, false),
-                    new RewardEntry("mtitems give %player% drill_pickaxe 1", "&#FF2A55&l⛏ Бур 3×3", 12, false),
-                    new RewardEntry("minecraft:give %player% diamond 8", "&bАлмазы (x8)", 20, false),
-                    new RewardEntry("minecraft:give %player% experience_bottle 64", "&aПузырёк опыта (x64)", 25, false),
-                    new RewardEntry("minecraft:give %player% golden_carrot 64", "&6Золотая морковь (x64)", 25, false)
+                    new RewardEntry("mtitems give %player% trapka 1", "&#0055ff&l⬛ Обсидиановая Трапка", 6, false),
+                    new RewardEntry("mtitems give %player% flash_pearl 1", "&#00E5FF&l👁 Око Пустоты", 8, false),
+                    new RewardEntry("mtitems give %player% drill_pickaxe 1", "&#FF2A55&l⛏ Бур 3×3", 10, false),
+                    new RewardEntry("minecraft:give %player% diamond 6", "&bАлмазы (x6)", 22, false),
+                    new RewardEntry("minecraft:give %player% experience_bottle 48", "&aПузырёк опыта (x48)", 27, false),
+                    new RewardEntry("minecraft:give %player% golden_carrot 48", "&6Золотая морковь (x48)", 27, false)
+            );
+            case TRASH -> List.of(
+                    new RewardEntry("minecraft:give %player% iron_ingot 16", "&fЖелезный слиток (x16)", 25, false),
+                    new RewardEntry("minecraft:give %player% gold_ingot 12", "&eЗолотой слиток (x12)", 20, false),
+                    new RewardEntry("minecraft:give %player% experience_bottle 16", "&aПузырёк опыта (x16)", 25, false),
+                    new RewardEntry("minecraft:give %player% cooked_beef 32", "&6Жареная говядина (x32)", 30, false)
             );
         };
     }
+
     private void updateLivePreview(Inventory inv) {
         int filled = 0;
         Map<Tier, Integer> tierWeights = new EnumMap<>(Tier.class);
@@ -210,8 +240,8 @@ public class MirTimeContracts extends JavaPlugin implements CommandExecutor, Lis
             }
         } else {
             lore.add("");
-            lore.add("&7Положите предметы в 10 ячеек сверху,");
-            lore.add("&7чтобы рассчитать шанс на каждый приз.");
+            lore.add("&7Положите любые 10 предметов сверху,");
+            lore.add("&7чтобы увидеть шанс на каждую награду.");
         }
 
         inv.setItem(31, makeItem(Material.ENCHANTED_BOOK, "&#0055ff[📊] &#00E5FF&lШансы на награды", lore));
@@ -223,7 +253,6 @@ public class MirTimeContracts extends JavaPlugin implements CommandExecutor, Lis
                         : List.of("&7Для запуска контракта нужно заполнить", "&7все &f10 &7центральных ячеек.")
         ));
     }
-
     @EventHandler(priority = EventPriority.HIGHEST)
     public void onMenuClick(InventoryClickEvent e) {
         if (!(e.getWhoClicked() instanceof Player p)) return;
